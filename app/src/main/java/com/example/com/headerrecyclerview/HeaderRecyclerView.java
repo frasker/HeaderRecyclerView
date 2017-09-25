@@ -1,22 +1,23 @@
 package com.example.com.headerrecyclerview;
 
 import android.content.Context;
+import android.support.v4.util.SparseArrayCompat;
 import android.support.v7.widget.RecyclerView;
 import android.util.AttributeSet;
 import android.view.View;
 import android.view.ViewGroup;
 
-import java.util.ArrayList;
 
 /**
  * Created by 默默 on 17/9/22.
  */
-
 @SuppressWarnings("ALL")
 public class HeaderRecyclerView extends RecyclerView {
-    private Adapter mAdapter;
-    private ArrayList<View> mHeaderViews = new ArrayList<>();
-    private ArrayList<View> mFooterViews = new ArrayList<>();
+    private RecyclerView.Adapter mAdapter;
+    private SparseArrayCompat<View> mHeaderViews = new SparseArrayCompat<>();
+    private SparseArrayCompat<View> mFooterViews = new SparseArrayCompat<>();
+    private View mLoaderView;
+    private int mCounts;
 
     public HeaderRecyclerView(Context context, AttributeSet attrs) {
         super(context, attrs);
@@ -31,15 +32,24 @@ public class HeaderRecyclerView extends RecyclerView {
     }
 
     public void addHeaderView(View v) {
-
-        if (mAdapter != null && !(mAdapter instanceof HeaderViewRecyclerAdapter)) {
-            throw new IllegalStateException(
-                    "Cannot add header view to list -- setAdapter has already been called.");
-        }
-        mHeaderViews.add(v);
+        mHeaderViews.put(HeaderViewRecyclerAdapter.VIEW_TYPE_HEADER + mCounts++, v);
+        // Wrap the adapter if it wasn't already wrapped.
         if (mAdapter != null) {
-            mAdapter.notifyDataSetChanged();
+            if (!(mAdapter instanceof HeaderViewRecyclerAdapter)) {
+                wrapHeaderViewRecyclerAdapter();
+            }
+            // In the case of re-adding a header view, or adding one later on,
+            // we need to notify the observer.
+            mAdapter.notifyItemInserted(mHeaderViews.size() - 1);
         }
+    }
+
+    private void wrapHeaderViewRecyclerAdapter() {
+        mAdapter = wrapHeaderViewRecyclerAdapter(mHeaderViews, mFooterViews, mLoaderView, mAdapter);
+    }
+
+    private Adapter wrapHeaderViewRecyclerAdapter(SparseArrayCompat<View> headerViews, SparseArrayCompat<View> footerViews, View loaderView, Adapter adapter) {
+        return new HeaderViewRecyclerAdapter(headerViews, footerViews, loaderView, adapter);
     }
 
     public int getHeaderViewsCount() {
@@ -50,7 +60,6 @@ public class HeaderRecyclerView extends RecyclerView {
         if (mHeaderViews.size() > 0) {
             boolean result = false;
             if (mAdapter != null && ((HeaderViewRecyclerAdapter) mAdapter).removeHeader(v)) {
-                mAdapter.notifyDataSetChanged();
                 result = true;
             }
             removeFixedView(v, mHeaderViews);
@@ -59,26 +68,23 @@ public class HeaderRecyclerView extends RecyclerView {
         return false;
     }
 
-    private void removeFixedView(View v, ArrayList<View> where) {
-        int len = where.size();
-        for (int i = 0; i < len; ++i) {
-            View view = where.get(i);
-            if (view == v) {
-                where.remove(i);
-                break;
-            }
-        }
+    private void removeFixedView(View v, SparseArrayCompat<View> where) {
+        int index = where.indexOfValue(v);
+        if (index >= 0)
+            where.removeAt(index);
+
     }
 
     public void addFooterView(View v) {
-
-        if (mAdapter != null && !(mAdapter instanceof HeaderViewRecyclerAdapter)) {
-            throw new IllegalStateException(
-                    "Cannot add header view to list -- setAdapter has already been called.");
-        }
-        mFooterViews.add(v);
+        mFooterViews.put(HeaderViewRecyclerAdapter.VIEW_TYPE_FOOTER + mCounts++, v);
+        // Wrap the adapter if it wasn't already wrapped.
         if (mAdapter != null) {
-            mAdapter.notifyDataSetChanged();
+            if (!(mAdapter instanceof HeaderViewRecyclerAdapter)) {
+                wrapHeaderViewRecyclerAdapter();
+            }
+            // In the case of re-adding a header view, or adding one later on,
+            // we need to notify the observer.
+            mAdapter.notifyItemInserted(mAdapter.getItemCount() - 1 - getLoaderViewsCount());
         }
     }
 
@@ -90,7 +96,6 @@ public class HeaderRecyclerView extends RecyclerView {
         if (mFooterViews.size() > 0) {
             boolean result = false;
             if (mAdapter != null && ((HeaderViewRecyclerAdapter) mAdapter).removeFooter(v)) {
-                mAdapter.notifyDataSetChanged();
                 result = true;
             }
             removeFixedView(v, mFooterViews);
@@ -99,10 +104,38 @@ public class HeaderRecyclerView extends RecyclerView {
         return false;
     }
 
+    public void addLoaderView(View v) {
+        mLoaderView = v;
+        if (mAdapter != null) {
+            if (!(mAdapter instanceof HeaderViewRecyclerAdapter)) {
+                wrapHeaderViewRecyclerAdapter();
+            }
+            // In the case of re-adding a header view, or adding one later on,
+            // we need to notify the observer.
+            mAdapter.notifyItemInserted(mAdapter.getItemCount() - 1);
+        }
+    }
+
+    public int getLoaderViewsCount() {
+        return mLoaderView != null ? 1 : 0;
+    }
+
+    public boolean removeLoaderView() {
+        if (mLoaderView != null) {
+            boolean result = false;
+            if (mAdapter != null && ((HeaderViewRecyclerAdapter) mAdapter).removeLoader()) {
+                result = true;
+            }
+            mLoaderView = null;
+            return result;
+        }
+        return false;
+    }
+
     @Override
     public void setAdapter(Adapter adapter) {
-        if (mHeaderViews.size() > 0 || mFooterViews.size() > 0) {
-            mAdapter = new HeaderViewRecyclerAdapter(mHeaderViews, mFooterViews, adapter);
+        if (mHeaderViews.size() > 0 || mFooterViews.size() > 0 || mLoaderView != null) {
+            mAdapter = wrapHeaderViewRecyclerAdapter(mHeaderViews, mFooterViews, mLoaderView, adapter);
         } else {
             mAdapter = adapter;
         }
@@ -110,48 +143,62 @@ public class HeaderRecyclerView extends RecyclerView {
     }
 
     private class HeaderViewRecyclerAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
-        private static final int VIEW_TYPE_HEADER = Integer.MIN_VALUE;
-        private static final int VIEW_TYPE_FOOTER = Integer.MIN_VALUE / 2;
-        private static final int VIEW_TYPE_LOADER = Integer.MAX_VALUE;
-        private ArrayList<View> mHeaderViews;
-        private ArrayList<View> mFooterViews;
+        public static final int VIEW_TYPE_HEADER = Integer.MAX_VALUE >> 1;
+        public static final int VIEW_TYPE_FOOTER = Integer.MAX_VALUE >> 2;
+        public static final int VIEW_TYPE_LOADER = Integer.MAX_VALUE;
+        private SparseArrayCompat<View> mHeaderViews;
+        private SparseArrayCompat<View> mFooterViews;
+        private View mLoaderView;
         private RecyclerView.Adapter mAdapter;
 
-        HeaderViewRecyclerAdapter(ArrayList<View> mHeaderViews, ArrayList<View> mFooterViews,
+        HeaderViewRecyclerAdapter(SparseArrayCompat<View> mHeaderViews, SparseArrayCompat<View> mFooterViews, View mLoaderView,
                                   RecyclerView.Adapter adapter) {
-            if (adapter == null)
-                throw new RuntimeException("adapter is null");
             this.mHeaderViews = mHeaderViews;
             this.mFooterViews = mFooterViews;
+            this.mLoaderView = mLoaderView;
             if (mAdapter != null) {
-                notifyItemRangeRemoved(getHeadersCount(), mAdapter.getItemCount());
                 mAdapter.unregisterAdapterDataObserver(mObserver);
             }
             mAdapter = adapter;
-            mAdapter.registerAdapterDataObserver(mObserver);
-            notifyItemRangeInserted(getHeadersCount(), mAdapter.getItemCount());
+            if (mAdapter != null) {
+                mAdapter.registerAdapterDataObserver(mObserver);
+            }
         }
 
         @Override
         public RecyclerView.ViewHolder onCreateViewHolder(ViewGroup viewGroup, int viewType) {
-            if (viewType < VIEW_TYPE_HEADER + getHeadersCount()) {
-                return new ViewHolder(mHeaderViews.get(viewType - VIEW_TYPE_HEADER));
-            } else if (viewType < VIEW_TYPE_FOOTER + getFootersCount()) {
-                return new ViewHolder(mFooterViews.get(viewType - VIEW_TYPE_FOOTER));
+            if (mHeaderViews.get(viewType) != null) {
+                return new ViewHolder(mHeaderViews.get(viewType));
+            } else if (mFooterViews.get(viewType) != null) {
+                return new ViewHolder(mFooterViews.get(viewType));
+            } else if (viewType == VIEW_TYPE_LOADER) {
+                return new ViewHolder(mLoaderView);
             }
-            return mAdapter.createViewHolder(viewGroup, viewType);
+            if (mAdapter != null)
+                return mAdapter.createViewHolder(viewGroup, viewType);
+            throw new RuntimeException("position should match header or footer or loader");
         }
 
         @Override
         public void onBindViewHolder(RecyclerView.ViewHolder holder, int position) {
-            if (position < getHeadersCount() || position >= getHeadersCount() + getCount())
+            int numHeaders = getHeadersCount();
+            if (position < numHeaders) {
                 return;
-            mAdapter.onBindViewHolder(holder, position - getHeadersCount());
+            }
+            // Adapter
+            final int adjPosition = position - numHeaders;
+            int adapterCount = 0;
+            if (mAdapter != null) {
+                adapterCount = mAdapter.getItemCount();
+                if (adjPosition < adapterCount) {
+                    mAdapter.onBindViewHolder(holder, adjPosition);
+                }
+            }
         }
 
         @Override
         public int getItemCount() {
-            return getFootersCount() + getHeadersCount() + getCount();
+            return getFootersCount() + getHeadersCount() + getLoadersCount() + getCount();
         }
 
         private int getCount() {
@@ -162,7 +209,7 @@ public class HeaderRecyclerView extends RecyclerView {
         public int getItemViewType(int position) {
             int numHeaders = getHeadersCount();
             if (position < numHeaders) {
-                return VIEW_TYPE_HEADER + position;
+                return mHeaderViews.keyAt(position);
             }
             // Adapter
             final int adjPosition = position - numHeaders;
@@ -176,7 +223,7 @@ public class HeaderRecyclerView extends RecyclerView {
             int numFooters = getFootersCount();
             final int footPosition = position - numHeaders - adapterCount;
             if (footPosition < numFooters) {
-                return VIEW_TYPE_FOOTER + footPosition;
+                return mFooterViews.keyAt(footPosition);
             }
             return VIEW_TYPE_LOADER;
         }
@@ -189,18 +236,55 @@ public class HeaderRecyclerView extends RecyclerView {
             return mFooterViews.size();
         }
 
+        private int getLoadersCount() {
+            return mLoaderView != null ? 1 : 0;
+        }
+
         private boolean removeHeader(View v) {
-            boolean success = mHeaderViews.remove(v);
-            if (success)
-                notifyDataSetChanged();
-            return success;
+            int index = mHeaderViews.indexOfValue(v);
+            if (index >= 0) {
+                mHeaderViews.removeAt(index);
+                notifyItemRemoved(index);
+                return true;
+            }
+            return false;
         }
 
         private boolean removeFooter(View v) {
-            boolean success = mFooterViews.remove(v);
-            if (success)
-                notifyDataSetChanged();
+            int index = mFooterViews.indexOfValue(v);
+            if (index >= 0) {
+                mFooterViews.removeAt(index);
+                notifyItemRemoved(getHeadersCount() + getCount() + index);
+                return true;
+            }
+            return false;
+        }
+
+        private boolean removeLoader() {
+            boolean success = mLoaderView != null;
+            if (success) {
+                mLoaderView = null;
+                notifyItemRemoved(getItemCount());
+            }
             return success;
+        }
+
+        @Override
+        public void onViewAttachedToWindow(RecyclerView.ViewHolder holder) {
+            if (holder instanceof ViewHolder) return;
+            if (mAdapter != null) mAdapter.onViewAttachedToWindow(holder);
+        }
+
+        @Override
+        public void onViewDetachedFromWindow(RecyclerView.ViewHolder holder) {
+            if (holder instanceof ViewHolder) return;
+            if (mAdapter != null) mAdapter.onViewDetachedFromWindow(holder);
+        }
+
+        @Override
+        public void onViewRecycled(RecyclerView.ViewHolder holder) {
+            if (holder instanceof ViewHolder) return;
+            if (mAdapter != null) mAdapter.onViewRecycled(holder);
         }
 
         private RecyclerView.AdapterDataObserver mObserver = new RecyclerView.AdapterDataObserver() {
@@ -233,7 +317,7 @@ public class HeaderRecyclerView extends RecyclerView {
         };
     }
 
-    public static class ViewHolder extends RecyclerView.ViewHolder {
+    private static class ViewHolder extends RecyclerView.ViewHolder {
         public ViewHolder(View itemView) {
             super(itemView);
         }
