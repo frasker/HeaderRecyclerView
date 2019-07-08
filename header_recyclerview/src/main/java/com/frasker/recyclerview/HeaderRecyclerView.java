@@ -1,4 +1,4 @@
-package com.example.com.headerrecyclerview;
+package com.frasker.recyclerview;
 
 import android.content.Context;
 import android.support.annotation.LayoutRes;
