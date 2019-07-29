@@ -16,6 +16,6 @@ recyclerView.removeFooterView(footerView);
 ## 依赖
 ```
 dependencies {
-  implementation 'com.github.frasker:headerrecyclerview:0.0.2'
+  implementation 'com.github.frasker:headerrecyclerview:0.0.3'
 }
 ```
